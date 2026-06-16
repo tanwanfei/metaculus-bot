@@ -27,8 +27,9 @@ jobs:
         run: python main.py --mode tournament
         env:
           METACULUS_TOKEN: ${{ secrets.METACULUS_TOKEN }}
-          # All optional — set whichever you have. The bot uses the sponsored
-          # Metaculus proxy when no personal LLM key is present.
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}   # current primary LLM provider (see main.py CONFIG)
+          # The rest are optional — set whichever you have. OPENROUTER_API_KEY is the
+          # intended target once free credits are granted (swap the panel in main.py then).
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
