@@ -83,25 +83,33 @@ logger = logging.getLogger(__name__)
 
 
 # ============================== CONFIG ========================================
-# The ensemble panel. Defaults use the SPONSORED, FREE Metaculus proxy (works with
-# only METACULUS_TOKEN) and deliberately mixes two providers for diversity.
+# The ensemble panel — OpenRouter models verified (via _diag_llm.py) to actually
+# work with this project's key. NOTE: the Metaculus free proxy returned "no
+# allowance" for every model on this token, so we route ALL LLM calls through
+# OpenRouter instead. The panel deliberately mixes THREE model families for
+# diversity — that diversity is the whole point of the ensemble.
 #
-# To use your own credits / newer models, replace or extend this list, e.g.:
-#   "openrouter/openai/gpt-4o"                 (needs OPENROUTER_API_KEY)
-#   "openrouter/anthropic/claude-3.7-sonnet"   (needs OPENROUTER_API_KEY)
-#   "gpt-4o"                                    (needs OPENAI_API_KEY)
-#   "claude-3-7-sonnet-latest"                  (needs ANTHROPIC_API_KEY)
-# Keep the panel cross-provider — that diversity is the point.
+# All three are free / near-free on OpenRouter. Once you have OpenRouter credits you
+# can swap in stronger models, e.g. "openrouter/openai/gpt-4o-mini" or
+# "openrouter/anthropic/claude-3.5-haiku" — but RE-RUN `python _diag_llm.py` first to
+# confirm your key/balance can call them (paid OpenAI/Anthropic 403'd on a $0 balance).
 FORECASTER_MODELS: list[str] = [
-    "metaculus/gpt-4o",
-    "metaculus/anthropic/claude-3-5-sonnet-20241022",
+    "openrouter/google/gemma-4-31b-it:free",   # Google Gemma family
+    "openrouter/nex-agi/nex-n2-pro:free",      # Nex family
+    "openrouter/inclusionai/ling-2.6-flash",   # InclusionAI Ling family (near-free)
 ]
 
-RUNS_PER_MODEL = 2          # forecasts per model per question (raise for more aggregation)
+# The framework's default parser/researcher point at OpenAI-via-OpenRouter, which a
+# $0-balance key cannot call (403). Pin them to models this key CAN call, or parsing
+# silently fails and every forecast dies.
+PARSER_MODEL = "openrouter/google/gemma-4-31b-it:free"      # extracts the final %/option/percentiles
+RESEARCHER_MODEL = "openrouter/google/gemma-4-31b-it:free"  # writes the research rundown (knowledge-based; no live web search on free tier)
+
+RUNS_PER_MODEL = 1          # forecasts per model per question. =1 to conserve the OpenRouter free-tier daily quota (still a 3-model ensemble); raise once you have credits.
 MODEL_TEMPERATURE = 0.4     # >0 so repeated runs differ; the spread is what we aggregate
 REQUEST_TIMEOUT = 90        # seconds per LLM call
-MAX_CONCURRENT_LLM_CALLS = 5  # global throttle to stay under provider rate limits
-PARSER_VALIDATION_SAMPLES = 2  # robustness of the text->structured-output parsing
+MAX_CONCURRENT_LLM_CALLS = 3  # global throttle. Low to stay under OpenRouter free-tier's ~20 req/min limit.
+PARSER_VALIDATION_SAMPLES = 1  # text->structured parse robustness. =1 to save calls on the free tier; raise to 2 with credits.
 
 # --- AskNews DeepNews deep research (used automatically IF AskNews creds are set) ---
 # DeepNews is AskNews' agentic deep-research endpoint: it runs several rounds of
@@ -674,6 +682,22 @@ if __name__ == "__main__":
         publish_reports_to_metaculus=publish,
         folder_to_save_reports_to=None,
         skip_previously_forecasted_questions=True,
+        llms={
+            # Pin every support role to a model this key can actually call. The
+            # framework defaults point at OpenAI-via-OpenRouter (403 on a $0 balance),
+            # which would silently break the parser and sink every forecast.
+            "default": GeneralLlm(
+                model=FORECASTER_MODELS[0],
+                temperature=MODEL_TEMPERATURE,
+                timeout=REQUEST_TIMEOUT,
+            ),
+            "parser": GeneralLlm(
+                model=PARSER_MODEL, temperature=0, timeout=REQUEST_TIMEOUT
+            ),
+            "researcher": GeneralLlm(
+                model=RESEARCHER_MODEL, temperature=0.1, timeout=REQUEST_TIMEOUT
+            ),
+        },
     )
 
     client = MetaculusClient()
