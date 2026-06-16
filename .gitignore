@@ -5,7 +5,8 @@
 # Python
 __pycache__/
 *.py[cod]
-_*.py            # local diagnostic / smoke scripts (e.g. _diag_llm.py, _smoke.py) — never commit
+# local diagnostic / smoke scripts (e.g. _diag_llm.py, _smoke.py) — never commit
+_*.py
 *.egg-info/
 .venv/
 venv/
