@@ -23,13 +23,14 @@ score levers, instead of the single-shot baseline of the stock template:
      is used automatically whenever AskNews credentials are present; otherwise the
      bot degrades gracefully to a plain search model.
 
-WHY IT'S ZERO-COST BY DEFAULT
------------------------------
-During the tournament Metaculus sponsors LLM access through its `metaculus/...`
-proxy (keyed off your METACULUS_TOKEN). The default panel below uses two *different*
-providers through that proxy, so you get a diverse ensemble for free — no OpenAI /
-Anthropic / OpenRouter key required. Add your own keys only if you want newer or
-stronger models (see FORECASTER_MODELS).
+LLM PROVIDER
+------------
+All LLM calls currently route through DeepSeek's DIRECT API (DEEPSEEK_API_KEY) as a
+low-cost stopgap: it's pay-as-you-go with no daily request wall. (The Metaculus
+`metaculus/...` proxy returned "no allowance" for this token, and OpenRouter's
+$0-balance free tier caps at ~50 req/day — too few for a full tournament round.)
+When OpenRouter credits are granted, switch FORECASTER_MODELS back to a cross-provider
+OpenRouter panel for stronger multi-family diversity (see the CONFIG block below).
 
 TUNING (all near the top of this file)
 --------------------------------------
@@ -83,33 +84,33 @@ logger = logging.getLogger(__name__)
 
 
 # ============================== CONFIG ========================================
-# The ensemble panel — OpenRouter models verified (via _diag_llm.py) to actually
-# work with this project's key. NOTE: the Metaculus free proxy returned "no
-# allowance" for every model on this token, so we route ALL LLM calls through
-# OpenRouter instead. The panel deliberately mixes THREE model families for
-# diversity — that diversity is the whole point of the ensemble.
+# STOPGAP PANEL (while waiting for OpenRouter free credits to be granted): route ALL
+# LLM calls through DeepSeek's DIRECT API (DEEPSEEK_API_KEY). DeepSeek direct is
+# pay-as-you-go with NO daily request wall — unlike OpenRouter's $0-balance free tier
+# (~50 req/day), which couldn't cover a full tournament round. Both models below were
+# verified callable on this key via `python _diag_deepseek.py`.
 #
-# All three are free / near-free on OpenRouter. Once you have OpenRouter credits you
-# can swap in stronger models, e.g. "openrouter/openai/gpt-4o-mini" or
-# "openrouter/anthropic/claude-3.5-haiku" — but RE-RUN `python _diag_llm.py` first to
-# confirm your key/balance can call them (paid OpenAI/Anthropic 403'd on a $0 balance).
+# The panel mixes DeepSeek's two DISTINCT models so the ensemble still has diversity:
+#   - deepseek-reasoner (R1): explicit chain-of-thought, the stronger forecaster
+#   - deepseek-chat     (V3): fast non-reasoning model, different failure modes
+# When OpenRouter credits land, swap back to a CROSS-PROVIDER OpenRouter panel
+# (e.g. gpt-4o-mini / claude-3.5-haiku / gemini-flash) for true multi-family
+# diversity — but RE-RUN `python _diag_llm.py` first to confirm the key can call them.
 FORECASTER_MODELS: list[str] = [
-    "openrouter/google/gemma-4-31b-it:free",   # Google Gemma family
-    "openrouter/nex-agi/nex-n2-pro:free",      # Nex family
-    "openrouter/inclusionai/ling-2.6-flash",   # InclusionAI Ling family (near-free)
+    "deepseek/deepseek-reasoner",  # R1 — reasoning model, primary forecaster
+    "deepseek/deepseek-chat",      # V3 — fast, adds ensemble diversity
 ]
 
-# The framework's default parser/researcher point at OpenAI-via-OpenRouter, which a
-# $0-balance key cannot call (403). Pin them to models this key CAN call, or parsing
-# silently fails and every forecast dies.
-PARSER_MODEL = "openrouter/google/gemma-4-31b-it:free"      # extracts the final %/option/percentiles
-RESEARCHER_MODEL = "openrouter/google/gemma-4-31b-it:free"  # writes the research rundown (knowledge-based; no live web search on free tier)
+# Parser/researcher use V3 (not R1): parsing is mechanical so R1's chain-of-thought is
+# wasted (and R1 doesn't support function-calling); research is synthesis V3 handles fine.
+PARSER_MODEL = "deepseek/deepseek-chat"      # extracts the final %/option/percentiles
+RESEARCHER_MODEL = "deepseek/deepseek-chat"  # writes the research rundown (knowledge-based; no live web search without AskNews)
 
-RUNS_PER_MODEL = 1          # forecasts per model per question. =1 to conserve the OpenRouter free-tier daily quota (still a 3-model ensemble); raise once you have credits.
-MODEL_TEMPERATURE = 0.4     # >0 so repeated runs differ; the spread is what we aggregate
-REQUEST_TIMEOUT = 90        # seconds per LLM call
-MAX_CONCURRENT_LLM_CALLS = 3  # global throttle. Low to stay under OpenRouter free-tier's ~20 req/min limit.
-PARSER_VALIDATION_SAMPLES = 1  # text->structured parse robustness. =1 to save calls on the free tier; raise to 2 with credits.
+RUNS_PER_MODEL = 1          # forecasts per model per question. 2 models already give diversity; DeepSeek has no daily quota wall, so you may raise this for tighter aggregation (costs a little more per question).
+MODEL_TEMPERATURE = 0.4     # >0 so repeated runs differ; the spread is what we aggregate (R1 ignores temperature — harmless)
+REQUEST_TIMEOUT = 150       # seconds per LLM call — generous, because R1's reasoning can be slow on long prompts
+MAX_CONCURRENT_LLM_CALLS = 5  # global throttle. DeepSeek's limits are generous (it throttles rather than hard-fails), so higher than the OpenRouter free tier allowed.
+PARSER_VALIDATION_SAMPLES = 1  # text->structured parse robustness.
 
 # --- AskNews DeepNews deep research (used automatically IF AskNews creds are set) ---
 # DeepNews is AskNews' agentic deep-research endpoint: it runs several rounds of
@@ -696,6 +697,11 @@ if __name__ == "__main__":
             ),
             "researcher": GeneralLlm(
                 model=RESEARCHER_MODEL, temperature=0.1, timeout=REQUEST_TIMEOUT
+            ),
+            # Unused (enable_summarize_research=False) but pinned anyway so the framework
+            # never silently falls back to its OpenAI-via-OpenRouter default.
+            "summarizer": GeneralLlm(
+                model=PARSER_MODEL, temperature=0, timeout=REQUEST_TIMEOUT
             ),
         },
     )
