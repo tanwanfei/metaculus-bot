@@ -25,7 +25,7 @@
 | | 是什么 | 在哪拿 | 必需？ |
 |---|---|---|---|
 | `METACULUS_TOKEN` | 你的 bot 账号 token | https://www.metaculus.com/futureeval/participate/ | **必需** |
-| `ASKNEWS_CLIENT_ID` + `ASKNEWS_SECRET` | 配了就自动启用 **DeepNews 深度研究**（显著提升研究质量，比赛常有赞助额度） | https://asknews.app/ | 可选但强烈建议 |
+| `ASKNEWS_CLIENT_ID` + `ASKNEWS_SECRET` | 配了就自动启用 **DeepNews 深度研究**（更强，但拿 key 需绑信用卡）。不配也行——会自动用免费的 metaculus 搜索代理做研究 | https://asknews.app/ | 可选 |
 
 ---
 
