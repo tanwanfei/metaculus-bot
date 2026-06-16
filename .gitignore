@@ -1,0 +1,20 @@
+# Secrets — NEVER commit real keys. Use GitHub Actions secrets instead.
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Reports / logs the bot may write locally
+forecast_reports/
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

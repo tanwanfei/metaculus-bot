@@ -1,0 +1,11 @@
+# Core framework — handles all Metaculus API plumbing (auth, fetching questions,
+# parsing question types, aggregating predictions, submitting forecasts) and the
+# `metaculus/` LLM proxy that gives sponsored (free) model access during the AIB.
+forecasting-tools>=0.2.90
+
+# Pinned to match the official template's tested dependency set.
+python-dotenv>=1.0.1
+asknews>=0.13.11
+numpy>=2.0.0
+openai>=2.0.0
+requests>=2.32.3

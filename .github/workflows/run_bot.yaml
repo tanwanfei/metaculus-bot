@@ -1,0 +1,38 @@
+name: Forecast on AI tournament
+
+# Runs the bot every 20 minutes on the live AIB tournament + MiniBench.
+# It skips questions it has already forecast, so frequent runs are safe and cheap.
+on:
+  workflow_dispatch: {}        # lets you trigger a run manually from the Actions tab
+  schedule:
+    - cron: "7,27,47 * * * *"  # every 20 min, offset off the hour
+
+# Never let two runs overlap (they'd double-forecast in-flight questions).
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run bot
+        run: python main.py --mode tournament
+        env:
+          METACULUS_TOKEN: ${{ secrets.METACULUS_TOKEN }}
+          # All optional — set whichever you have. The bot uses the sponsored
+          # Metaculus proxy when no personal LLM key is present.
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+          ASKNEWS_CLIENT_ID: ${{ secrets.ASKNEWS_CLIENT_ID }}
+          ASKNEWS_SECRET: ${{ secrets.ASKNEWS_SECRET }}
