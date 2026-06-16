@@ -63,6 +63,8 @@ from forecasting_tools import (
     AskNewsSearcher,
     BinaryPrediction,
     BinaryQuestion,
+    DatePercentile,
+    DateQuestion,
     ForecastBot,
     ForecastReport,
     GeneralLlm,
@@ -606,6 +608,103 @@ class EnsembleBot(ForecastBot):
 
         return await self._run_ensemble(question, predict_once)
 
+    # -------------------------------- DATE -----------------------------------
+    async def _run_forecast_on_date(
+        self, question: DateQuestion, research: str
+    ) -> ReasonedPrediction[NumericDistribution]:
+        """A date question is just a continuous distribution whose values are dates.
+        We forecast date percentiles, convert them to unix timestamps, and reuse the
+        framework's numeric distribution + aggregator (same approach as the official
+        2026 template, wrapped in our multi-model ensemble)."""
+        upper_msg, lower_msg = self._date_bound_messages(question)
+        prompt = clean_indents(
+            f"""
+            You are a professional forecaster. Produce a calibrated probability
+            distribution over the DATE on which the question resolves.
+
+            Question:
+            {question.question_text}
+
+            Background:
+            {question.background_info or "No background provided."}
+
+            Resolution criteria:
+            {question.resolution_criteria}
+
+            {question.fine_print or ""}
+
+            Your research assistant says:
+            {research}
+
+            Today is {datetime.now().strftime("%Y-%m-%d")}.
+
+            {lower_msg}
+            {upper_msg}
+
+            Formatting rules:
+            - This is a DATE question: every answer value must be a date.
+            - Write dates as YYYY-MM-DD (append THH:MM:SSZ in UTC only if the hour matters).
+            - Dates must strictly increase chronologically: P10 < P20 < P40 < P60 < P80 < P90.
+
+            Reason in this order, writing each part out:
+            (a) Time left until the outcome is known.
+            (b) OUTSIDE VIEW: base rate / typical timing for this kind of event.
+            (c) The resolution date if nothing changed, and if the current trend continued.
+            (d) Expectations of experts and markets.
+            (e) INSIDE VIEW: case-specific evidence from the research.
+            (f) An unexpectedly-early scenario and an unexpectedly-late scenario.
+
+            Good forecasters are humble: set WIDE 90/10 intervals to cover unknown
+            unknowns.
+
+            The last thing you write is your final answer as:
+            "
+            Percentile 10: YYYY-MM-DD (earliest)
+            Percentile 20: YYYY-MM-DD
+            Percentile 40: YYYY-MM-DD
+            Percentile 60: YYYY-MM-DD
+            Percentile 80: YYYY-MM-DD
+            Percentile 90: YYYY-MM-DD (latest)
+            "
+            """
+        )
+        parsing_instructions = clean_indents(
+            f"""
+            The text is a forecast distribution of DATES for: "{question.question_text}".
+            - For reference, someone else guessed the answer is between {question.lower_bound}
+              and {question.upper_bound}.
+            - Format each value into a valid datetime-parsable string; assume midnight UTC
+              if no hour is given.
+            - If the text only gives a single date (no percentiles), indicate that the
+              distribution is not explicitly given rather than inventing one.
+            """
+        )
+
+        async def predict_once(model: GeneralLlm):
+            reasoning = await self._invoke(model, prompt)
+            date_percentiles: list[DatePercentile] = await structure_output(
+                reasoning,
+                list[DatePercentile],
+                model=self.get_llm("parser", "llm"),
+                num_validation_samples=PARSER_VALIDATION_SAMPLES,
+                additional_instructions=parsing_instructions,
+            )
+            # Convert dates -> unix timestamps so the framework's numeric machinery
+            # (distribution build + quantile-merge aggregation) applies unchanged.
+            percentiles = [
+                Percentile(percentile=p.percentile, value=p.value.timestamp())
+                for p in date_percentiles
+            ]
+            distribution = NumericDistribution.from_question(percentiles, question)
+            return (
+                distribution,
+                model.model,
+                str(distribution.declared_percentiles),
+                reasoning,
+            )
+
+        return await self._run_ensemble(question, predict_once)
+
     @staticmethod
     def _bound_messages(question: NumericQuestion) -> tuple[str, str]:
         upper = (
@@ -628,6 +727,22 @@ class EnsembleBot(ForecastBot):
             f"The question creator thinks the number is likely not lower than {lower} {unit}."
             if question.open_lower_bound
             else f"The outcome can not be lower than {lower} {unit}."
+        )
+        return upper_msg, lower_msg
+
+    @staticmethod
+    def _date_bound_messages(question: DateQuestion) -> tuple[str, str]:
+        upper = question.upper_bound.date().isoformat()
+        lower = question.lower_bound.date().isoformat()
+        upper_msg = (
+            f"The question creator thinks the date is likely not later than {upper}."
+            if question.open_upper_bound
+            else f"The date can not be later than {upper}."
+        )
+        lower_msg = (
+            f"The question creator thinks the date is likely not earlier than {lower}."
+            if question.open_lower_bound
+            else f"The date can not be earlier than {lower}."
         )
         return upper_msg, lower_msg
 
