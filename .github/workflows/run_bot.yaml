@@ -1,11 +1,15 @@
 name: Forecast on AI tournament
 
-# Runs the bot every 20 minutes on the live AIB tournament + MiniBench.
+# Runs the bot on the live AIB tournament + MiniBench.
 # It skips questions it has already forecast, so frequent runs are safe and cheap.
+#
+# Triggering is EXTERNAL: cron-job.org calls the GitHub REST API every ~20 min
+# (POST /repos/<owner>/<repo>/actions/workflows/<id>/dispatches) to fire the
+# workflow_dispatch event below. GitHub's own `schedule:` cron was unreliable for
+# this repo (silently never fired), so it was removed. Do NOT add `schedule:`
+# back unless you also disable the cron-job.org job, or both will double-trigger.
 on:
-  workflow_dispatch: {}        # lets you trigger a run manually from the Actions tab
-  schedule:
-    - cron: "7,27,47 * * * *"  # every 20 min, offset off the hour
+  workflow_dispatch: {}        # how cron-job.org (and manual Actions-tab runs) trigger this
 
 # Never let two runs overlap (they'd double-forecast in-flight questions).
 concurrency:
